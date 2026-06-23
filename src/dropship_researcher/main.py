@@ -11,6 +11,8 @@ from .models import ProductCandidate, MarketSnapshot
 from .reddit_rss import collect_reddit_text, count_keyword_mentions, discover_candidate_keywords
 from .scoring import score_opportunity
 from .supplier_csv import load_seed_keywords, load_supplier_products
+from .product_rules import add_validation_columns
+from .product_rules import add_validation_columns
 
 
 def build_candidates(supplier_csv: Path, keywords_file: Path) -> list[ProductCandidate]:
@@ -64,13 +66,14 @@ def run(args: argparse.Namespace) -> None:
         print("No opportunities scored. Add product_cost, shipping_cost, and estimated_sale_price to the supplier CSV or add an eBay token.")
         return
 
-    df = pd.DataFrame(opportunities).sort_values("opportunity_score", ascending=False)
+    df = add_validation_columns(pd.DataFrame(opportunities))
+    df = df.sort_values("final_score", ascending=False)
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(output_path, index=False)
 
     print(f"Saved: {output_path}")
-    print(df[["product_name", "estimated_profit", "profit_margin_pct", "opportunity_score", "decision"]].head(args.show).to_string(index=False))
+    print(df[["product_name", "estimated_profit", "profit_margin_pct", "opportunity_score", "final_score", "risk_level", "next_action", "decision"]].head(args.show).to_string(index=False))
 
 
 def parse_args() -> argparse.Namespace:
