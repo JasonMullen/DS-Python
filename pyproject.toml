@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dropship-trend-finder"
+version = "0.1.0"
+description = "A Python product research tool for scoring dropshipping opportunities."
+requires-python = ">=3.11"
+dependencies = [
+  "requests>=2.32.0",
+  "pandas>=2.2.0",
+  "python-dotenv>=1.0.1",
+  "beautifulsoup4>=4.12.3",
+  "lxml>=5.2.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

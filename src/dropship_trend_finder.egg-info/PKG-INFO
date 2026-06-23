@@ -1,0 +1,10 @@
+Metadata-Version: 2.4
+Name: dropship-trend-finder
+Version: 0.1.0
+Summary: A Python product research tool for scoring dropshipping opportunities.
+Requires-Python: >=3.11
+Requires-Dist: requests>=2.32.0
+Requires-Dist: pandas>=2.2.0
+Requires-Dist: python-dotenv>=1.0.1
+Requires-Dist: beautifulsoup4>=4.12.3
+Requires-Dist: lxml>=5.2.0

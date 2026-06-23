@@ -1,0 +1,16 @@
+README.md
+pyproject.toml
+src/dropship_researcher/__init__.py
+src/dropship_researcher/config.py
+src/dropship_researcher/ebay.py
+src/dropship_researcher/main.py
+src/dropship_researcher/models.py
+src/dropship_researcher/reddit_rss.py
+src/dropship_researcher/scoring.py
+src/dropship_researcher/supplier_csv.py
+src/dropship_trend_finder.egg-info/PKG-INFO
+src/dropship_trend_finder.egg-info/SOURCES.txt
+src/dropship_trend_finder.egg-info/dependency_links.txt
+src/dropship_trend_finder.egg-info/requires.txt
+src/dropship_trend_finder.egg-info/top_level.txt
+tests/test_scoring.py
