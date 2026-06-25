@@ -1,8 +1,6 @@
-.env
-.venv/
+﻿
+.browser/
 __pycache__/
 *.pyc
-.pytest_cache/
+.env
 output/*.csv
-output/*.json
-.DS_Store
