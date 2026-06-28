@@ -3,3 +3,21 @@
 __pycache__/
 *.pyc
 .env
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Browser/session files
+.browser/
+
+# Secrets
+.env
+.env.*
+
+# Large/generated data
+data/*.csv
+data/*.xlsx
+data/*.json
+*.log

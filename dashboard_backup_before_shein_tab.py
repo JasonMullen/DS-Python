@@ -1,6 +1,5 @@
 ﻿from pathlib import Path
 from datetime import datetime
-import re
 
 import pandas as pd
 import streamlit as st
@@ -13,8 +12,6 @@ import streamlit as st
 ZENDROP_PATH = Path("data/zendrop_smart_capture.csv")
 DHGATE_CLEAN_PATH = Path("data/dhgate_clean_user_friendly.csv")
 DHGATE_RAW_PATH = Path("data/dhgate_large_capture.csv")
-SHEIN_CLEAN_PATH = Path("data/shein_clean_user_friendly.csv")
-SHEIN_RAW_PATH = Path("data/shein_smart_capture.csv")
 
 OPPORTUNITIES_PATH = Path("output/opportunities.csv")
 LAUNCH_SHORTLIST_PATH = Path("output/launch_shortlist.csv")
@@ -31,6 +28,7 @@ st.set_page_config(
     page_icon="📦",
     layout="wide",
 )
+
 
 st.markdown(
     """
@@ -107,6 +105,7 @@ st.markdown(
 def read_csv_safe(path: Path) -> pd.DataFrame:
     if not path.exists():
         return pd.DataFrame()
+
     return pd.read_csv(path).fillna("").astype("object")
 
 
@@ -114,15 +113,9 @@ def clean_text(value) -> str:
     return str(value or "").strip()
 
 
-def normalize(value) -> str:
-    text = clean_text(value).lower()
-    text = re.sub(r"[^a-z0-9\s]", " ", text)
-    text = re.sub(r"\s+", " ", text).strip()
-    return text
-
-
 def clean_number(value) -> float:
     text = str(value or "").replace("$", "").replace("%", "").replace(",", "").strip()
+
     try:
         return float(text)
     except Exception:
@@ -132,6 +125,7 @@ def clean_number(value) -> float:
 def safe_col(df: pd.DataFrame, col: str, default="") -> pd.Series:
     if col in df.columns:
         return df[col]
+
     return pd.Series([default] * len(df), index=df.index)
 
 
@@ -149,10 +143,11 @@ def add_missing_columns(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
     for col in columns:
         if col not in df.columns:
             df[col] = ""
+
     return df.fillna("")
 
 
-def search_filter(df: pd.DataFrame, query: str, columns: list[str]) -> pd.DataFrame:
+def apply_search(df: pd.DataFrame, query: str, columns: list[str]) -> pd.DataFrame:
     if df.empty or not query.strip():
         return df
 
@@ -166,7 +161,7 @@ def search_filter(df: pd.DataFrame, query: str, columns: list[str]) -> pd.DataFr
     return df[mask]
 
 
-def select_filter(df: pd.DataFrame, col: str, label: str, key: str) -> pd.DataFrame:
+def filter_selectbox(df: pd.DataFrame, col: str, label: str, key: str) -> pd.DataFrame:
     if df.empty or col not in df.columns:
         return df
 
@@ -177,6 +172,12 @@ def select_filter(df: pd.DataFrame, col: str, label: str, key: str) -> pd.DataFr
         return df
 
     return df[df[col].astype(str) == selected]
+
+
+def show_missing_file(path: Path, command: str):
+    st.warning(f"Missing `{path}`.")
+    st.write("Run this first:")
+    st.code(command, language="powershell")
 
 
 def sort_numeric(df: pd.DataFrame, col: str, ascending: bool = False) -> pd.DataFrame:
@@ -198,23 +199,21 @@ def column_config():
         "price_max": st.column_config.NumberColumn("Max Price", format="$%.2f"),
         "shipping_cost": st.column_config.NumberColumn("Shipping", format="$%.2f"),
         "estimated_sale_price": st.column_config.NumberColumn("Est. Sale Price", format="$%.2f"),
+        "recommended_test_price": st.column_config.NumberColumn("Test Price", format="$%.2f"),
         "estimated_profit": st.column_config.NumberColumn("Est. Profit", format="$%.2f"),
         "profit_margin_pct": st.column_config.NumberColumn("Margin %", format="%.2f%%"),
         "roi_pct": st.column_config.NumberColumn("ROI %", format="%.2f%%"),
-        "growth_pct": st.column_config.NumberColumn("Growth %", format="%.2f%%"),
         "p_c_ratio": st.column_config.NumberColumn("P/C", format="%.2fx"),
+        "growth_pct": st.column_config.NumberColumn("Growth %", format="%.2f%%"),
         "opportunity_score": st.column_config.NumberColumn("Opportunity Score", format="%.2f"),
         "final_score": st.column_config.NumberColumn("Final Score", format="%.2f"),
-        "combined_rank_score": st.column_config.NumberColumn("Combined Score", format="%.2f"),
+        "launch_score": st.column_config.NumberColumn("Launch Score", format="%.2f"),
         "dhgate_opportunity_score": st.column_config.NumberColumn("DHgate Score", format="%.2f"),
-        "shein_opportunity_score": st.column_config.NumberColumn("SHEIN Score", format="%.2f"),
         "marketplace_score": st.column_config.NumberColumn("Marketplace Score", format="%.2f"),
-        "shein_market_score": st.column_config.NumberColumn("SHEIN Market Score", format="%.2f"),
+        "combined_rank_score": st.column_config.NumberColumn("Combined Rank Score", format="%.2f"),
         "rating": st.column_config.NumberColumn("Rating", format="%.2f"),
         "reviews_count": st.column_config.NumberColumn("Reviews"),
         "sold_count": st.column_config.NumberColumn("Sold"),
-        "discount_pct": st.column_config.NumberColumn("Discount %", format="%.0f%%"),
-        "launch_score": st.column_config.NumberColumn("Launch Score", format="%.2f"),
     }
 
 
@@ -225,8 +224,10 @@ def tab_header(icon: str, title: str, subtitle: str):
 
 def metric_row(metrics: list[tuple[str, str | int | float]]):
     cols = st.columns(len(metrics))
+
     for col, item in zip(cols, metrics):
         label, value = item
+
         with col:
             st.metric(label, value)
 
@@ -259,14 +260,8 @@ def render_table(df: pd.DataFrame, cols: list[str], height: int = 850):
     )
 
 
-def show_missing_file(path: Path, command: str):
-    st.warning(f"Missing `{path}`.")
-    st.write("Run this first:")
-    st.code(command, language="powershell")
-
-
 # ============================================================
-# LOAD SOURCE DATA
+# LOAD DATA
 # ============================================================
 
 def load_opportunities() -> pd.DataFrame:
@@ -280,16 +275,35 @@ def load_zendrop() -> pd.DataFrame:
         return df
 
     needed = [
-        "source_site", "marketplace_source", "image_url", "product_name",
-        "store_name", "category", "keyword", "product_cost",
-        "estimated_sale_price", "estimated_profit", "profit_margin_pct",
-        "roi_pct", "p_c_ratio", "growth_pct", "order_trend_score",
-        "saturation", "top_country", "first_seen_at", "last_seen_at",
-        "supplier_url", "risk_level", "next_action", "risk_notes",
-        "opportunity_score", "final_score",
+        "source_site",
+        "marketplace_source",
+        "image_url",
+        "product_name",
+        "store_name",
+        "category",
+        "keyword",
+        "product_cost",
+        "estimated_sale_price",
+        "estimated_profit",
+        "profit_margin_pct",
+        "roi_pct",
+        "p_c_ratio",
+        "growth_pct",
+        "order_trend_score",
+        "saturation",
+        "top_country",
+        "first_seen_at",
+        "last_seen_at",
+        "supplier_url",
+        "risk_level",
+        "next_action",
+        "risk_notes",
+        "opportunity_score",
+        "final_score",
     ]
 
     df = add_missing_columns(df, needed)
+
     df["source_site"] = "zendrop"
     df["marketplace_source"] = "ZENDROP"
 
@@ -297,27 +311,43 @@ def load_zendrop() -> pd.DataFrame:
 
     if not opp.empty and "product_name" in opp.columns:
         useful = [
-            "product_name", "estimated_sale_price", "estimated_profit",
-            "profit_margin_pct", "roi_pct", "opportunity_score",
-            "final_score", "risk_level", "next_action", "risk_notes",
+            "product_name",
+            "estimated_sale_price",
+            "estimated_profit",
+            "profit_margin_pct",
+            "roi_pct",
+            "opportunity_score",
+            "final_score",
+            "risk_level",
+            "next_action",
+            "risk_notes",
         ]
 
         useful = [col for col in useful if col in opp.columns]
+
         opp = opp[useful].drop_duplicates(subset=["product_name"])
 
         df = df.merge(opp, on="product_name", how="left", suffixes=("", "_opp"))
 
         for col in useful:
             extra = f"{col}_opp"
+
             if col != "product_name" and extra in df.columns:
                 df[col] = df[col].where(df[col].astype(str).str.len() > 0, df[extra])
 
         df = df.drop(columns=[col for col in df.columns if col.endswith("_opp")])
 
     numeric_cols = [
-        "product_cost", "estimated_sale_price", "estimated_profit",
-        "profit_margin_pct", "roi_pct", "p_c_ratio", "growth_pct",
-        "order_trend_score", "opportunity_score", "final_score",
+        "product_cost",
+        "estimated_sale_price",
+        "estimated_profit",
+        "profit_margin_pct",
+        "roi_pct",
+        "p_c_ratio",
+        "growth_pct",
+        "order_trend_score",
+        "opportunity_score",
+        "final_score",
     ]
 
     for col in numeric_cols:
@@ -336,26 +366,59 @@ def load_dhgate() -> pd.DataFrame:
         return df
 
     needed = [
-        "source_site", "marketplace_source", "next_action", "risk_level",
-        "dhgate_opportunity_score", "marketplace_score", "image_url",
-        "product_name", "category", "keyword", "product_cost", "price_min",
-        "price_max", "shipping_cost", "estimated_sale_price",
-        "estimated_profit", "profit_margin_pct", "roi_pct", "rating",
-        "reviews_count", "sold_count", "brand_risk", "shipping_risk",
-        "risk_notes", "supplier_url", "clean_supplier_url",
-        "dhgate_product_id", "crawl_page", "crawl_keyword",
-        "first_seen_at", "last_seen_at",
+        "source_site",
+        "marketplace_source",
+        "next_action",
+        "risk_level",
+        "dhgate_opportunity_score",
+        "marketplace_score",
+        "image_url",
+        "product_name",
+        "category",
+        "keyword",
+        "product_cost",
+        "price_min",
+        "price_max",
+        "shipping_cost",
+        "estimated_sale_price",
+        "estimated_profit",
+        "profit_margin_pct",
+        "roi_pct",
+        "rating",
+        "reviews_count",
+        "sold_count",
+        "brand_risk",
+        "shipping_risk",
+        "risk_notes",
+        "supplier_url",
+        "clean_supplier_url",
+        "dhgate_product_id",
+        "crawl_page",
+        "crawl_keyword",
+        "first_seen_at",
+        "last_seen_at",
     ]
 
     df = add_missing_columns(df, needed)
+
     df["source_site"] = "dhgate"
     df["marketplace_source"] = "DHGATE"
 
     numeric_cols = [
-        "dhgate_opportunity_score", "marketplace_score", "product_cost",
-        "price_min", "price_max", "shipping_cost", "estimated_sale_price",
-        "estimated_profit", "profit_margin_pct", "roi_pct", "rating",
-        "reviews_count", "sold_count", "crawl_page",
+        "dhgate_opportunity_score",
+        "marketplace_score",
+        "product_cost",
+        "price_min",
+        "price_max",
+        "shipping_cost",
+        "estimated_sale_price",
+        "estimated_profit",
+        "profit_margin_pct",
+        "roi_pct",
+        "rating",
+        "reviews_count",
+        "sold_count",
+        "crawl_page",
     ]
 
     for col in numeric_cols:
@@ -363,48 +426,6 @@ def load_dhgate() -> pd.DataFrame:
 
     return df.fillna("")
 
-
-def load_shein() -> pd.DataFrame:
-    if SHEIN_CLEAN_PATH.exists():
-        df = read_csv_safe(SHEIN_CLEAN_PATH)
-    else:
-        df = read_csv_safe(SHEIN_RAW_PATH)
-
-    if df.empty:
-        return df
-
-    needed = [
-        "source_site", "marketplace_source", "source_role", "next_action",
-        "risk_level", "shein_opportunity_score", "shein_market_score",
-        "image_url", "product_name", "category", "keyword", "product_cost",
-        "price_min", "price_max", "shipping_cost", "estimated_sale_price",
-        "estimated_profit", "profit_margin_pct", "roi_pct", "reviews_count",
-        "discount_pct", "brand_risk", "brand_risk_notes", "risk_notes",
-        "supplier_url", "clean_supplier_url", "shein_product_id",
-        "crawl_page", "crawl_keyword", "first_seen_at", "last_seen_at",
-    ]
-
-    df = add_missing_columns(df, needed)
-    df["source_site"] = "shein"
-    df["marketplace_source"] = "SHEIN"
-    df["source_role"] = "TREND_REFERENCE"
-
-    numeric_cols = [
-        "shein_opportunity_score", "shein_market_score", "product_cost",
-        "price_min", "price_max", "shipping_cost", "estimated_sale_price",
-        "estimated_profit", "profit_margin_pct", "roi_pct", "reviews_count",
-        "discount_pct", "crawl_page",
-    ]
-
-    for col in numeric_cols:
-        df[col] = clean_number_series(df[col])
-
-    return df.fillna("")
-
-
-# ============================================================
-# COMBINED NORMALIZATION
-# ============================================================
 
 def normalize_zendrop_for_combined(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
@@ -423,14 +444,15 @@ def normalize_zendrop_for_combined(df: pd.DataFrame) -> pd.DataFrame:
     out["profit_margin_pct"] = clean_number_series(safe_col(df, "profit_margin_pct", 0))
     out["roi_pct"] = clean_number_series(safe_col(df, "roi_pct", 0))
     out["source_score"] = clean_number_series(safe_col(df, "final_score", 0))
-    out["marketplace_score"] = clean_number_series(safe_col(df, "order_trend_score", 0))
     out["growth_pct"] = clean_number_series(safe_col(df, "growth_pct", 0))
-    out["next_action"] = safe_col(df, "next_action")
+    out["marketplace_score"] = clean_number_series(safe_col(df, "order_trend_score", 0))
     out["risk_level"] = safe_col(df, "risk_level")
+    out["next_action"] = safe_col(df, "next_action")
     out["risk_notes"] = safe_col(df, "risk_notes")
     out["supplier_url"] = safe_col(df, "supplier_url")
-    out["source_detail"] = safe_col(df, "store_name")
+    out["first_seen_at"] = safe_col(df, "first_seen_at")
     out["extra_signal"] = "Growth/P-C"
+    out["source_detail"] = safe_col(df, "store_name")
 
     return out.fillna("")
 
@@ -452,43 +474,15 @@ def normalize_dhgate_for_combined(df: pd.DataFrame) -> pd.DataFrame:
     out["profit_margin_pct"] = clean_number_series(safe_col(df, "profit_margin_pct", 0))
     out["roi_pct"] = clean_number_series(safe_col(df, "roi_pct", 0))
     out["source_score"] = clean_number_series(safe_col(df, "dhgate_opportunity_score", 0))
+    out["growth_pct"] = 0
     out["marketplace_score"] = clean_number_series(safe_col(df, "marketplace_score", 0))
-    out["growth_pct"] = 0
-    out["next_action"] = safe_col(df, "next_action")
     out["risk_level"] = safe_col(df, "risk_level")
+    out["next_action"] = safe_col(df, "next_action")
     out["risk_notes"] = safe_col(df, "risk_notes")
     out["supplier_url"] = safe_col(df, "supplier_url")
-    out["source_detail"] = safe_col(df, "crawl_keyword")
+    out["first_seen_at"] = safe_col(df, "first_seen_at")
     out["extra_signal"] = "Reviews/Sold"
-
-    return out.fillna("")
-
-
-def normalize_shein_for_combined(df: pd.DataFrame) -> pd.DataFrame:
-    if df.empty:
-        return df
-
-    out = pd.DataFrame(index=df.index)
-
-    out["source_site"] = "shein"
-    out["marketplace_source"] = "SHEIN"
-    out["image_url"] = safe_col(df, "image_url")
-    out["product_name"] = safe_col(df, "product_name")
-    out["category"] = safe_col(df, "category")
-    out["product_cost"] = clean_number_series(safe_col(df, "product_cost", 0))
-    out["estimated_sale_price"] = clean_number_series(safe_col(df, "estimated_sale_price", 0))
-    out["estimated_profit"] = clean_number_series(safe_col(df, "estimated_profit", 0))
-    out["profit_margin_pct"] = clean_number_series(safe_col(df, "profit_margin_pct", 0))
-    out["roi_pct"] = clean_number_series(safe_col(df, "roi_pct", 0))
-    out["source_score"] = clean_number_series(safe_col(df, "shein_opportunity_score", 0))
-    out["marketplace_score"] = clean_number_series(safe_col(df, "shein_market_score", 0))
-    out["growth_pct"] = 0
-    out["next_action"] = safe_col(df, "next_action")
-    out["risk_level"] = safe_col(df, "risk_level")
-    out["risk_notes"] = safe_col(df, "risk_notes")
-    out["supplier_url"] = safe_col(df, "supplier_url")
     out["source_detail"] = safe_col(df, "crawl_keyword")
-    out["extra_signal"] = "Trend/Reviews"
 
     return out.fillna("")
 
@@ -502,13 +496,12 @@ def combined_rank_score(row) -> float:
     marketplace = clean_number(row.get("marketplace_score", 0))
     action = clean_text(row.get("next_action", "")).upper()
     risk = clean_text(row.get("risk_level", "")).upper()
-    source = clean_text(row.get("source_site", "")).lower()
     image = clean_text(row.get("image_url", ""))
     url = clean_text(row.get("supplier_url", ""))
 
     score = 0.0
 
-    score += min(max(source_score, 0), 100) * 0.38
+    score += min(max(source_score, 0), 100) * 0.40
     score += min(max(marketplace, 0), 100) * 0.15
     score += min(max(margin, 0), 80) * 0.15
     score += min(max(roi, 0), 200) * 0.05
@@ -547,40 +540,19 @@ def combined_rank_score(row) -> float:
     if url.startswith("http"):
         score += 4
 
-    # SHEIN is useful, but treated as trend/reference so it should not dominate supplier sources.
-    if source == "shein":
-        score = min(score, 82)
-
     return round(max(min(score, 100), 0), 2)
-
-
-def combined_dedupe_key(row) -> str:
-    source = clean_text(row.get("source_site", "")).lower()
-    url = clean_text(row.get("supplier_url", "")).split("?")[0].split("#")[0]
-    name = normalize(row.get("product_name", ""))
-    image = clean_text(row.get("image_url", "")).split("?")[0]
-
-    if url:
-        return f"{source}|url|{url}"
-
-    return f"{source}|name_image|{name}|{image}"
 
 
 def load_combined_products() -> pd.DataFrame:
     zendrop = normalize_zendrop_for_combined(load_zendrop())
     dhgate = normalize_dhgate_for_combined(load_dhgate())
-    shein = normalize_shein_for_combined(load_shein())
 
-    frames = [df for df in [zendrop, dhgate, shein] if not df.empty]
+    frames = [df for df in [zendrop, dhgate] if not df.empty]
 
     if not frames:
         return pd.DataFrame()
 
     combined = pd.concat(frames, ignore_index=True).fillna("").astype("object")
-
-    combined["dedupe_key"] = combined.apply(combined_dedupe_key, axis=1)
-    combined = combined.drop_duplicates(subset=["dedupe_key"], keep="last")
-    combined = combined.drop(columns=["dedupe_key"])
 
     combined["combined_rank_score"] = combined.apply(combined_rank_score, axis=1)
 
@@ -605,11 +577,22 @@ def load_test_plan() -> pd.DataFrame:
     decisions = read_csv_safe(TEST_DECISIONS_PATH)
 
     if not decisions.empty and "product_name" in decisions.columns:
-        plan = plan.merge(decisions, on="product_name", how="left", suffixes=("", "_saved"))
+        plan = plan.merge(
+            decisions,
+            on="product_name",
+            how="left",
+            suffixes=("", "_saved"),
+        )
 
         for col in [
-            "test_decision", "test_status", "manual_priority", "chosen_niche",
-            "competitor_notes", "page_notes", "creative_notes", "final_notes",
+            "test_decision",
+            "test_status",
+            "manual_priority",
+            "chosen_niche",
+            "competitor_notes",
+            "page_notes",
+            "creative_notes",
+            "final_notes",
             "last_updated",
         ]:
             saved = f"{col}_saved"
@@ -623,14 +606,37 @@ def load_test_plan() -> pd.DataFrame:
         plan = plan.drop(columns=[col for col in plan.columns if col.endswith("_saved")])
 
     needed = [
-        "test_rank", "image_url", "product_name", "launch_tier", "launch_score",
-        "product_cost", "recommended_test_price", "estimated_profit",
-        "profit_margin_pct", "roi_pct", "ideal_customer", "customer_pain_point",
-        "product_page_angle", "ad_hook_1", "ad_hook_2", "ad_hook_3",
-        "short_video_script", "test_budget", "pass_fail_rule", "risk_level",
-        "risk_notes", "supplier_url", "test_decision", "test_status",
-        "manual_priority", "chosen_niche", "competitor_notes", "page_notes",
-        "creative_notes", "final_notes", "last_updated",
+        "test_rank",
+        "image_url",
+        "product_name",
+        "launch_tier",
+        "launch_score",
+        "product_cost",
+        "recommended_test_price",
+        "estimated_profit",
+        "profit_margin_pct",
+        "roi_pct",
+        "ideal_customer",
+        "customer_pain_point",
+        "product_page_angle",
+        "ad_hook_1",
+        "ad_hook_2",
+        "ad_hook_3",
+        "short_video_script",
+        "test_budget",
+        "pass_fail_rule",
+        "risk_level",
+        "risk_notes",
+        "supplier_url",
+        "test_decision",
+        "test_status",
+        "manual_priority",
+        "chosen_niche",
+        "competitor_notes",
+        "page_notes",
+        "creative_notes",
+        "final_notes",
+        "last_updated",
     ]
 
     return add_missing_columns(plan, needed)
@@ -641,11 +647,11 @@ def load_test_plan() -> pd.DataFrame:
 # ============================================================
 
 st.sidebar.title("📦 Product Board")
-st.sidebar.write("Zendrop, DHgate, and SHEIN are separated and also combined into the Top 50 board.")
+st.sidebar.write("Clean layout across every tab.")
 
 search_query = st.sidebar.text_input(
     "Search products",
-    placeholder="women clothing, soccer shirts, pet, home, beauty",
+    placeholder="soccer shirts, pet, home, beauty, car",
 )
 
 st.sidebar.divider()
@@ -654,7 +660,7 @@ st.sidebar.header("Update Workflow")
 st.sidebar.code(
     """
 python .\\clean_dhgate_csv.py
-python .\\clean_shein_csv.py
+python .\\combine_supplier_sources.py
 python -m dropship_researcher.main
 python .\\make_launch_shortlist.py
 python .\\make_product_test_plan.py
@@ -665,10 +671,11 @@ streamlit run dashboard.py
 
 st.sidebar.divider()
 
-st.sidebar.header("Sources")
-st.sidebar.markdown("**Zendrop:** supplier source")
-st.sidebar.markdown("**DHgate:** supplier marketplace")
-st.sidebar.markdown("**SHEIN:** trend/reference source")
+st.sidebar.header("Tab Layout")
+st.sidebar.markdown("**1. Title**")
+st.sidebar.markdown("**2. Filters**")
+st.sidebar.markdown("**3. Metric cards**")
+st.sidebar.markdown("**4. Product table**")
 
 
 # ============================================================
@@ -676,15 +683,14 @@ st.sidebar.markdown("**SHEIN:** trend/reference source")
 # ============================================================
 
 st.title("📦 Dropship Product Research Board")
-st.caption("Separate source tabs with a combined Top 50 ranking from Zendrop, DHgate, and SHEIN.")
+st.caption("Zendrop and DHgate separated, with clean filters, metrics, and product tables on every tab.")
 
-tab_top50, tab_combined, tab_zendrop, tab_dhgate, tab_shein, tab_shortlist, tab_testing = st.tabs(
+tab_top50, tab_combined, tab_zendrop, tab_dhgate, tab_shortlist, tab_testing = st.tabs(
     [
         "🏆 Top 50 Combined",
         "📊 Combined Board",
         "🟣 Zendrop",
         "🟠 DHgate",
-        "🛍️ SHEIN",
         "🚀 Launch Shortlist",
         "🧪 Product Testing",
     ]
@@ -692,64 +698,86 @@ tab_top50, tab_combined, tab_zendrop, tab_dhgate, tab_shein, tab_shortlist, tab_
 
 
 # ============================================================
-# TOP 50 COMBINED TAB
+# TOP 50 TAB
 # ============================================================
 
 with tab_top50:
     tab_header(
         "🏆",
         "Top 50 Combined Products",
-        "Best products from Zendrop, DHgate, and SHEIN ranked together.",
+        "Best products from Zendrop and DHgate ranked together for quick review.",
     )
 
     combined = load_combined_products()
 
     if combined.empty:
         show_missing_file(
-            SHEIN_CLEAN_PATH,
-            "python .\\clean_dhgate_csv.py\npython .\\clean_shein_csv.py\npython -m dropship_researcher.main",
+            OPPORTUNITIES_PATH,
+            "python .\\clean_dhgate_csv.py\npython -m dropship_researcher.main",
         )
     else:
-        filtered = search_filter(
+        filtered = apply_search(
             combined,
             search_query,
-            ["product_name", "category", "source_site", "next_action", "risk_level", "risk_notes", "source_detail"],
+            [
+                "product_name",
+                "category",
+                "source_site",
+                "marketplace_source",
+                "risk_level",
+                "next_action",
+                "risk_notes",
+                "source_detail",
+            ],
         )
 
         f1, f2, f3 = st.columns(3)
 
         with f1:
-            filtered = select_filter(filtered, "source_site", "Source", "top50_source")
+            filtered = filter_selectbox(filtered, "source_site", "Source", "top50_source")
 
         with f2:
-            filtered = select_filter(filtered, "next_action", "Action", "top50_action")
+            filtered = filter_selectbox(filtered, "next_action", "Action", "top50_action")
 
         with f3:
-            filtered = select_filter(filtered, "risk_level", "Risk", "top50_risk")
+            filtered = filter_selectbox(filtered, "risk_level", "Risk", "top50_risk")
 
         top50 = filtered.head(50).copy()
 
         metric_row(
             [
-                ("Total Combined", len(combined)),
+                ("Total Products", len(combined)),
                 ("Top 50 View", len(top50)),
                 ("Zendrop", int((top50["source_site"] == "zendrop").sum()) if not top50.empty else 0),
                 ("DHgate", int((top50["source_site"] == "dhgate").sum()) if not top50.empty else 0),
-                ("SHEIN", int((top50["source_site"] == "shein").sum()) if not top50.empty else 0),
+                ("Avg Profit", f"${clean_number_series(top50['estimated_profit']).mean():.2f}" if not top50.empty else "$0.00"),
             ]
         )
 
-        download_current_view(top50, "top_50_combined_zendrop_dhgate_shein.csv")
+        download_current_view(top50, "top_50_combined_products.csv")
 
         cols = [
-            "image_url", "combined_rank_score", "product_name", "source_site",
-            "category", "next_action", "risk_level", "product_cost",
-            "estimated_sale_price", "estimated_profit", "profit_margin_pct",
-            "roi_pct", "source_score", "marketplace_score", "extra_signal",
-            "source_detail", "risk_notes", "supplier_url",
+            "image_url",
+            "combined_rank_score",
+            "product_name",
+            "source_site",
+            "category",
+            "next_action",
+            "risk_level",
+            "product_cost",
+            "estimated_sale_price",
+            "estimated_profit",
+            "profit_margin_pct",
+            "roi_pct",
+            "source_score",
+            "marketplace_score",
+            "extra_signal",
+            "source_detail",
+            "risk_notes",
+            "supplier_url",
         ]
 
-        render_table(top50, cols, height=850)
+        render_table(top50, cols)
 
 
 # ============================================================
@@ -760,54 +788,74 @@ with tab_combined:
     tab_header(
         "📊",
         "Combined Product Board",
-        "Full board with Zendrop, DHgate, and SHEIN in one table.",
+        "Full product board with both Zendrop and DHgate together.",
     )
 
     combined = load_combined_products()
 
     if combined.empty:
         show_missing_file(
-            SHEIN_CLEAN_PATH,
-            "python .\\clean_dhgate_csv.py\npython .\\clean_shein_csv.py\npython -m dropship_researcher.main",
+            OPPORTUNITIES_PATH,
+            "python .\\clean_dhgate_csv.py\npython -m dropship_researcher.main",
         )
     else:
-        combined = search_filter(
+        combined = apply_search(
             combined,
             search_query,
-            ["product_name", "category", "source_site", "next_action", "risk_level", "risk_notes", "source_detail"],
+            [
+                "product_name",
+                "category",
+                "source_site",
+                "marketplace_source",
+                "risk_level",
+                "next_action",
+                "risk_notes",
+                "source_detail",
+            ],
         )
 
         f1, f2, f3 = st.columns(3)
 
         with f1:
-            combined = select_filter(combined, "source_site", "Source", "combined_source")
+            combined = filter_selectbox(combined, "source_site", "Source", "combined_source")
 
         with f2:
-            combined = select_filter(combined, "next_action", "Action", "combined_action")
+            combined = filter_selectbox(combined, "next_action", "Action", "combined_action")
 
         with f3:
-            combined = select_filter(combined, "risk_level", "Risk", "combined_risk")
+            combined = filter_selectbox(combined, "risk_level", "Risk", "combined_risk")
 
         metric_row(
             [
                 ("Products", len(combined)),
-                ("Zendrop", int((combined["source_site"] == "zendrop").sum())),
-                ("DHgate", int((combined["source_site"] == "dhgate").sum())),
-                ("SHEIN", int((combined["source_site"] == "shein").sum())),
+                ("TEST", int((combined["next_action"].astype(str) == "TEST").sum())),
+                ("WATCH", int((combined["next_action"].astype(str) == "WATCH").sum())),
+                ("PASS", int((combined["next_action"].astype(str) == "PASS").sum())),
             ]
         )
 
-        download_current_view(combined, "combined_zendrop_dhgate_shein.csv")
+        download_current_view(combined, "combined_product_board.csv")
 
         cols = [
-            "image_url", "combined_rank_score", "product_name", "source_site",
-            "category", "next_action", "risk_level", "product_cost",
-            "estimated_sale_price", "estimated_profit", "profit_margin_pct",
-            "roi_pct", "source_score", "marketplace_score", "extra_signal",
-            "source_detail", "risk_notes", "supplier_url",
+            "image_url",
+            "combined_rank_score",
+            "product_name",
+            "source_site",
+            "category",
+            "next_action",
+            "risk_level",
+            "product_cost",
+            "estimated_sale_price",
+            "estimated_profit",
+            "profit_margin_pct",
+            "roi_pct",
+            "source_score",
+            "marketplace_score",
+            "risk_notes",
+            "supplier_url",
         ]
 
-        render_table(combined, cols, height=900)
+        render_table(combined, cols)
 
 
 # ============================================================
@@ -818,27 +866,37 @@ with tab_zendrop:
     tab_header(
         "🟣",
         "Zendrop Products",
-        "Products captured from Zendrop.",
+        "Products captured from Zendrop, sorted by growth and opportunity signals.",
     )
 
     zendrop = load_zendrop()
 
     if zendrop.empty:
-        show_missing_file(ZENDROP_PATH, "python .\\zendrop_smart_capture.py")
+        show_missing_file(
+            ZENDROP_PATH,
+            "python .\\zendrop_smart_capture.py",
+        )
     else:
-        zendrop = search_filter(
+        zendrop = apply_search(
             zendrop,
             search_query,
-            ["product_name", "store_name", "category", "keyword", "saturation", "top_country"],
+            [
+                "product_name",
+                "store_name",
+                "category",
+                "keyword",
+                "saturation",
+                "top_country",
+            ],
         )
 
         f1, f2 = st.columns(2)
 
         with f1:
-            zendrop = select_filter(zendrop, "category", "Category", "zendrop_category")
+            zendrop = filter_selectbox(zendrop, "category", "Category", "zendrop_category")
 
         with f2:
-            zendrop = select_filter(zendrop, "saturation", "Saturation", "zendrop_saturation")
+            zendrop = filter_selectbox(zendrop, "saturation", "Saturation", "zendrop_saturation")
 
         metric_row(
             [
@@ -851,17 +909,29 @@ with tab_zendrop:
 
         download_current_view(zendrop, "zendrop_products.csv")
 
-        zendrop = sort_numeric(zendrop, "growth_pct", ascending=False)
+        zendrop_sorted = sort_numeric(zendrop, "growth_pct", ascending=False)
 
         cols = [
-            "image_url", "product_name", "store_name", "category",
-            "product_cost", "estimated_sale_price", "estimated_profit",
-            "profit_margin_pct", "roi_pct", "p_c_ratio", "growth_pct",
-            "order_trend_score", "saturation", "top_country", "first_seen_at",
-            "last_seen_at", "supplier_url",
+            "image_url",
+            "product_name",
+            "store_name",
+            "category",
+            "product_cost",
+            "estimated_sale_price",
+            "estimated_profit",
+            "profit_margin_pct",
+            "roi_pct",
+            "p_c_ratio",
+            "growth_pct",
+            "order_trend_score",
+            "saturation",
+            "top_country",
+            "first_seen_at",
+            "last_seen_at",
+            "supplier_url",
         ]
 
-        render_table(zendrop, cols, height=900)
+        render_table(zendrop_sorted, cols)
 
 
 # ============================================================
@@ -872,30 +942,43 @@ with tab_dhgate:
     tab_header(
         "🟠",
         "DHgate Products",
-        "Cleaned DHgate products with supplier links, profit estimates, and risk labels.",
+        "Cleaned DHgate products with profit estimates, risk labels, reviews, and sold signals.",
     )
 
     dhgate = load_dhgate()
 
     if dhgate.empty:
-        show_missing_file(DHGATE_CLEAN_PATH, "python .\\clean_dhgate_csv.py")
+        show_missing_file(
+            DHGATE_CLEAN_PATH,
+            "python .\\clean_dhgate_csv.py",
+        )
     else:
-        dhgate = search_filter(
+        dhgate = apply_search(
             dhgate,
             search_query,
-            ["product_name", "category", "keyword", "crawl_keyword", "next_action", "risk_level", "risk_notes"],
+            [
+                "product_name",
+                "category",
+                "keyword",
+                "crawl_keyword",
+                "next_action",
+                "risk_level",
+                "risk_notes",
+                "brand_risk",
+                "shipping_risk",
+            ],
         )
 
         f1, f2, f3 = st.columns(3)
 
         with f1:
-            dhgate = select_filter(dhgate, "next_action", "Action", "dhgate_action")
+            dhgate = filter_selectbox(dhgate, "next_action", "Action", "dhgate_action")
 
         with f2:
-            dhgate = select_filter(dhgate, "risk_level", "Risk", "dhgate_risk")
+            dhgate = filter_selectbox(dhgate, "risk_level", "Risk", "dhgate_risk")
 
         with f3:
-            dhgate = select_filter(dhgate, "crawl_keyword", "Crawl Keyword", "dhgate_keyword")
+            dhgate = filter_selectbox(dhgate, "crawl_keyword", "Crawl Keyword", "dhgate_keyword")
 
         metric_row(
             [
@@ -908,81 +991,38 @@ with tab_dhgate:
 
         download_current_view(dhgate, "dhgate_products.csv")
 
-        dhgate = sort_numeric(dhgate, "dhgate_opportunity_score", ascending=False)
+        dhgate_sorted = sort_numeric(dhgate, "dhgate_opportunity_score", ascending=False)
 
         cols = [
-            "image_url", "next_action", "risk_level", "dhgate_opportunity_score",
-            "marketplace_score", "product_name", "category", "keyword",
-            "product_cost", "price_min", "price_max", "shipping_cost",
-            "estimated_sale_price", "estimated_profit", "profit_margin_pct",
-            "roi_pct", "rating", "reviews_count", "sold_count", "brand_risk",
-            "shipping_risk", "risk_notes", "supplier_url", "dhgate_product_id",
-            "crawl_page", "crawl_keyword",
+            "image_url",
+            "next_action",
+            "risk_level",
+            "dhgate_opportunity_score",
+            "marketplace_score",
+            "product_name",
+            "category",
+            "keyword",
+            "product_cost",
+            "price_min",
+            "price_max",
+            "shipping_cost",
+            "estimated_sale_price",
+            "estimated_profit",
+            "profit_margin_pct",
+            "roi_pct",
+            "rating",
+            "reviews_count",
+            "sold_count",
+            "brand_risk",
+            "shipping_risk",
+            "risk_notes",
+            "supplier_url",
+            "dhgate_product_id",
+            "crawl_page",
+            "crawl_keyword",
         ]
 
-        render_table(dhgate, cols, height=900)
-
-
-# ============================================================
-# SHEIN TAB
-# ============================================================
-
-with tab_shein:
-    tab_header(
-        "🛍️",
-        "SHEIN Products",
-        "SHEIN products captured from your Chrome tab. Treat SHEIN as a trend/reference source.",
-    )
-
-    shein = load_shein()
-
-    if shein.empty:
-        show_missing_file(
-            SHEIN_CLEAN_PATH,
-            "python .\\clean_shein_csv.py",
-        )
-    else:
-        shein = search_filter(
-            shein,
-            search_query,
-            ["product_name", "category", "keyword", "crawl_keyword", "next_action", "risk_level", "risk_notes", "brand_risk"],
-        )
-
-        f1, f2, f3 = st.columns(3)
-
-        with f1:
-            shein = select_filter(shein, "next_action", "Action", "shein_action")
-
-        with f2:
-            shein = select_filter(shein, "risk_level", "Risk", "shein_risk")
-
-        with f3:
-            shein = select_filter(shein, "category", "Category", "shein_category")
-
-        metric_row(
-            [
-                ("SHEIN Products", len(shein)),
-                ("WATCH", int((shein["next_action"].astype(str) == "WATCH").sum())),
-                ("PASS", int((shein["next_action"].astype(str) == "PASS").sum())),
-                ("Avg Score", f"{clean_number_series(shein['shein_opportunity_score']).mean():.1f}"),
-            ]
-        )
-
-        download_current_view(shein, "shein_products.csv")
-
-        shein = sort_numeric(shein, "shein_opportunity_score", ascending=False)
-
-        cols = [
-            "image_url", "next_action", "risk_level", "shein_opportunity_score",
-            "shein_market_score", "source_role", "product_name", "category",
-            "keyword", "product_cost", "price_min", "price_max", "shipping_cost",
-            "estimated_sale_price", "estimated_profit", "profit_margin_pct",
-            "roi_pct", "reviews_count", "discount_pct", "brand_risk",
-            "risk_notes", "supplier_url", "shein_product_id", "crawl_page",
-            "crawl_keyword", "first_seen_at", "last_seen_at",
-        ]
-
-        render_table(shein, cols, height=900)
+        render_table(dhgate_sorted, cols)
 
 
 # ============================================================
@@ -993,30 +1033,43 @@ with tab_shortlist:
     tab_header(
         "🚀",
         "Launch Shortlist",
-        "Products ranked for possible testing.",
+        "Products ranked for possible testing, with launch tier, angle, and next step.",
     )
 
     shortlist = load_launch_shortlist()
 
     if shortlist.empty:
-        show_missing_file(LAUNCH_SHORTLIST_PATH, "python .\\make_launch_shortlist.py")
+        show_missing_file(
+            LAUNCH_SHORTLIST_PATH,
+            "python .\\make_launch_shortlist.py",
+        )
     else:
-        shortlist = search_filter(
+        shortlist = apply_search(
             shortlist,
             search_query,
-            ["product_name", "launch_tier", "category", "ad_angle", "launch_next_step", "risk_level", "risk_notes"],
+            [
+                "product_name",
+                "launch_tier",
+                "category",
+                "ad_angle",
+                "launch_next_step",
+                "risk_level",
+                "risk_notes",
+                "source_site",
+                "marketplace_source",
+            ],
         )
 
         f1, f2, f3 = st.columns(3)
 
         with f1:
-            shortlist = select_filter(shortlist, "launch_tier", "Launch Tier", "shortlist_tier")
+            shortlist = filter_selectbox(shortlist, "launch_tier", "Launch Tier", "shortlist_tier")
 
         with f2:
-            shortlist = select_filter(shortlist, "source_site", "Source", "shortlist_source")
+            shortlist = filter_selectbox(shortlist, "source_site", "Source", "shortlist_source")
 
         with f3:
-            shortlist = select_filter(shortlist, "risk_level", "Risk", "shortlist_risk")
+            shortlist = filter_selectbox(shortlist, "risk_level", "Risk", "shortlist_risk")
 
         shortlist = sort_numeric(shortlist, "launch_score", ascending=False)
 
@@ -1032,14 +1085,26 @@ with tab_shortlist:
         download_current_view(shortlist, "launch_shortlist.csv")
 
         cols = [
-            "image_url", "product_name", "source_site", "marketplace_source",
-            "launch_tier", "launch_score", "ad_angle", "launch_next_step",
-            "category", "product_cost", "estimated_sale_price",
-            "estimated_profit", "profit_margin_pct", "roi_pct", "risk_level",
-            "risk_notes", "supplier_url",
+            "image_url",
+            "product_name",
+            "source_site",
+            "marketplace_source",
+            "launch_tier",
+            "launch_score",
+            "ad_angle",
+            "launch_next_step",
+            "category",
+            "product_cost",
+            "estimated_sale_price",
+            "estimated_profit",
+            "profit_margin_pct",
+            "roi_pct",
+            "risk_level",
+            "risk_notes",
+            "supplier_url",
         ]
 
-        render_table(shortlist, cols, height=900)
+        render_table(shortlist, cols)
 
 
 # ============================================================
@@ -1050,18 +1115,35 @@ with tab_testing:
     tab_header(
         "🧪",
         "Product Testing Dashboard",
-        "Editable board for testing decisions, notes, and status.",
+        "Editable testing board for decisions, status, notes, page work, and ad creative.",
     )
 
     test_plan = load_test_plan()
 
     if test_plan.empty:
-        show_missing_file(PRODUCT_TEST_PLAN_PATH, "python .\\make_product_test_plan.py")
+        show_missing_file(
+            PRODUCT_TEST_PLAN_PATH,
+            "python .\\make_product_test_plan.py",
+        )
     else:
-        test_plan = search_filter(
+        test_plan = apply_search(
             test_plan,
             search_query,
-            ["product_name", "launch_tier", "ideal_customer", "customer_pain_point", "product_page_angle", "risk_level", "risk_notes"],
+            [
+                "product_name",
+                "launch_tier",
+                "ideal_customer",
+                "customer_pain_point",
+                "product_page_angle",
+                "ad_hook_1",
+                "ad_hook_2",
+                "ad_hook_3",
+                "risk_level",
+                "risk_notes",
+                "test_decision",
+                "test_status",
+                "chosen_niche",
+            ],
         )
 
         f1, f2, f3 = st.columns(3)
@@ -1077,15 +1159,22 @@ with tab_testing:
             status_filter = st.selectbox(
                 "Test Status",
                 [
-                    "All", "NOT STARTED", "PAGE NEEDED", "CREATIVE NEEDED",
-                    "READY TO TEST", "TESTING", "KILL", "IMPROVE",
-                    "SCALE CAREFULLY", "",
+                    "All",
+                    "NOT STARTED",
+                    "PAGE NEEDED",
+                    "CREATIVE NEEDED",
+                    "READY TO TEST",
+                    "TESTING",
+                    "KILL",
+                    "IMPROVE",
+                    "SCALE CAREFULLY",
+                    "",
                 ],
                 key="testing_status_filter",
             )
 
         with f3:
-            test_plan = select_filter(test_plan, "launch_tier", "Launch Tier", "testing_launch_tier")
+            test_plan = filter_selectbox(test_plan, "launch_tier", "Launch Tier", "testing_launch_tier")
 
         if decision_filter != "All":
             test_plan = test_plan[test_plan["test_decision"].astype(str) == decision_filter]
@@ -1105,14 +1194,35 @@ with tab_testing:
         test_plan = sort_numeric(test_plan, "test_rank", ascending=True)
 
         cols = [
-            "test_rank", "image_url", "product_name", "launch_tier",
-            "launch_score", "product_cost", "recommended_test_price",
-            "estimated_profit", "profit_margin_pct", "roi_pct",
-            "ideal_customer", "customer_pain_point", "product_page_angle",
-            "ad_hook_1", "ad_hook_2", "ad_hook_3", "short_video_script",
-            "test_budget", "pass_fail_rule", "risk_level", "risk_notes",
-            "test_decision", "test_status", "manual_priority", "chosen_niche",
-            "competitor_notes", "page_notes", "creative_notes", "final_notes",
+            "test_rank",
+            "image_url",
+            "product_name",
+            "launch_tier",
+            "launch_score",
+            "product_cost",
+            "recommended_test_price",
+            "estimated_profit",
+            "profit_margin_pct",
+            "roi_pct",
+            "ideal_customer",
+            "customer_pain_point",
+            "product_page_angle",
+            "ad_hook_1",
+            "ad_hook_2",
+            "ad_hook_3",
+            "short_video_script",
+            "test_budget",
+            "pass_fail_rule",
+            "risk_level",
+            "risk_notes",
+            "test_decision",
+            "test_status",
+            "manual_priority",
+            "chosen_niche",
+            "competitor_notes",
+            "page_notes",
+            "creative_notes",
+            "final_notes",
             "supplier_url",
         ]
 
@@ -1132,8 +1242,14 @@ with tab_testing:
                 "test_status": st.column_config.SelectboxColumn(
                     "Test Status",
                     options=[
-                        "", "NOT STARTED", "PAGE NEEDED", "CREATIVE NEEDED",
-                        "READY TO TEST", "TESTING", "KILL", "IMPROVE",
+                        "",
+                        "NOT STARTED",
+                        "PAGE NEEDED",
+                        "CREATIVE NEEDED",
+                        "READY TO TEST",
+                        "TESTING",
+                        "KILL",
+                        "IMPROVE",
                         "SCALE CAREFULLY",
                     ],
                 ),
@@ -1144,12 +1260,27 @@ with tab_testing:
             },
             disabled=[
                 col for col in [
-                    "test_rank", "image_url", "product_name", "launch_tier",
-                    "launch_score", "product_cost", "recommended_test_price",
-                    "estimated_profit", "profit_margin_pct", "roi_pct",
-                    "ideal_customer", "customer_pain_point", "product_page_angle",
-                    "ad_hook_1", "ad_hook_2", "ad_hook_3", "short_video_script",
-                    "test_budget", "pass_fail_rule", "risk_level", "risk_notes",
+                    "test_rank",
+                    "image_url",
+                    "product_name",
+                    "launch_tier",
+                    "launch_score",
+                    "product_cost",
+                    "recommended_test_price",
+                    "estimated_profit",
+                    "profit_margin_pct",
+                    "roi_pct",
+                    "ideal_customer",
+                    "customer_pain_point",
+                    "product_page_angle",
+                    "ad_hook_1",
+                    "ad_hook_2",
+                    "ad_hook_3",
+                    "short_video_script",
+                    "test_budget",
+                    "pass_fail_rule",
+                    "risk_level",
+                    "risk_notes",
                     "supplier_url",
                 ] if col in cols
             ],
@@ -1165,9 +1296,15 @@ with tab_testing:
 
         if save_clicked:
             save_cols = [
-                "product_name", "test_decision", "test_status",
-                "manual_priority", "chosen_niche", "competitor_notes",
-                "page_notes", "creative_notes", "final_notes",
+                "product_name",
+                "test_decision",
+                "test_status",
+                "manual_priority",
+                "chosen_niche",
+                "competitor_notes",
+                "page_notes",
+                "creative_notes",
+                "final_notes",
             ]
 
             save_df = edited.copy()
